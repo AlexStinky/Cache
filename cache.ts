@@ -5,15 +5,29 @@ const DB_CONN: string = process.env.DB_CONN || 'mongodb://localhost:27017/';
 const DB_NAME: string = process.env.DB_NAME || 'test';
 const USERS_COLLECTION: string = process.env.USERS_COLLECTION || 'users';
 
-const REQ1 = process.env.REQ1 || 'Steve Austin';
-const REQ2 = process.env.REQ2 || 'TheRock';
-const REQ3 = 'not found';
+const CACHESIZE = process.env.CACHESIZE || 10; // Размер кэша
+
+const req: string[] = [
+    'Alex',
+    'Stinky',
+    'The Rock',
+    'Steve Austin',
+    'Triple H',
+    'Randy Orton',
+    'John Cena',
+    'Batista',
+    'Roman Reigns',
+    'Dean Ambrose',
+    'Seth Rollins',
+    'Hulk Hogan',
+];
 
 const collections: { users?: mongoDB.Collection } = {};
 
 interface IRes {
     data: Object;
     count: number;
+    date: Date;
 }
 
 interface ICache extends Record<string, any> {
@@ -32,9 +46,17 @@ const DBCache: ICache = {
             const res: IRes = {
                 data: check,
                 count: 0,
+                date: new Date(),
             };
 
-            this[name] = res;
+            const keys: any[] = Object.keys(this).sort((a: string, b: string) => Date.parse(this[a].date) - Date.parse(this[b].date));
+
+            if (keys.length <= CACHESIZE) {
+                this[name] = res;
+            } else {
+                delete this[keys[1]];
+                this[name] = res;
+            }
         }
 
         this[name].count = this[name].count + 1;
@@ -54,11 +76,9 @@ const DBCache: ICache = {
 
     collections.users = collection;
 
-    await DBCache.get(REQ1);
-    await DBCache.get(REQ2);
-    await DBCache.get(REQ2);
-    await DBCache.get(REQ2);
-    await DBCache.get(REQ3);
+    for (let i: number = 0; i < 12; i++) {
+        await DBCache.get(req[i]);
+    }
 
     setTimeout(() => console.log(DBCache), 10000);
 })();
