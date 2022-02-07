@@ -1,14 +1,9 @@
 import 'dotenv/config';
 import * as mongoDB from 'mongodb';
-import * as redis from 'redis';
 
 const DB_CONN: string = process.env.DB_CONN || 'mongodb://localhost:27017/';
 const DB_NAME: string = process.env.DB_NAME || 'test';
 const USERS_COLLECTION: string = process.env.USERS_COLLECTION || 'users';
-
-const PORTREDIS: string = process.env.PORT_REDIS || '6379';
-
-const redisClient = redis.createClient();
 
 const CACHESIZE = process.env.CACHESIZE || 10; // Размер кэша
 
@@ -56,53 +51,28 @@ const DBCache: ICache = {
                 date: new Date(),
             };
 
-            const keys: any[] = Object.keys(this).sort((a: string, b: string) => Date.parse(this[a].date) - Date.parse(this[b].date));
-
-            if (keys.length <= CACHESIZE) {
-                this[name] = res;
-            } else {
-                delete this[keys[1]];
-                this[name] = res;
-            }
+            this[name] = res;
         }
 
-        this[name].count = this[name].count + 1;
+        const temp = this[name];
+        delete this[name];
+
+        this[name] = temp;
+
+        const keys = Object.keys(this);
+
+        if (keys.length >= CACHESIZE) {
+            delete this[keys[1]];
+        }
 
         return this[name];
     },
-};
-
-async function getReq (req: string): Promise<Object> {
-    const check: Object | null = (await collections?.users?.findOne({ name: req }) || null);
-
-    if (check) {
-        console.log(`[Mongo] ${check}`);
-
-        await redisClient.set(req, JSON.stringify(check));
-
-        return check;
-    }
-
-    return {};
-}
-
-async function isCached (req: string, next: Function): Promise<Object> {
-    const data = await redisClient.get(req);
-
-    if (!data) {
-        return next(req);
-    } else {
-        console.log(`[Redis] ${data}`);
-
-        return data;
-    }
 };
 
 (async function () {
     const client: mongoDB.MongoClient = new mongoDB.MongoClient(DB_CONN);
 
     await client.connect();
-    await redisClient.connect();
 
     const db: mongoDB.Db = client.db(DB_NAME);
 
@@ -111,6 +81,8 @@ async function isCached (req: string, next: Function): Promise<Object> {
     collections.users = collection;
 
     for (let i: number = 0; i < 14; i++) {
-        await isCached(req[i], getReq);
+        await DBCache.get(req[i]);
     }
+
+    setTimeout(() => { console.log(DBCache) }, 10000);
 })();
