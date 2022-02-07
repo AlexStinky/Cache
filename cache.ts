@@ -1,22 +1,29 @@
 import 'dotenv/config';
 import * as mongoDB from 'mongodb';
+import * as redis from 'redis';
 
 const DB_CONN: string = process.env.DB_CONN || 'mongodb://localhost:27017/';
 const DB_NAME: string = process.env.DB_NAME || 'test';
 const USERS_COLLECTION: string = process.env.USERS_COLLECTION || 'users';
 
+const PORTREDIS: string = process.env.PORT_REDIS || '6379';
+
+const redisClient = redis.createClient();
+
 const CACHESIZE = process.env.CACHESIZE || 10; // Размер кэша
 
 const req: string[] = [
     'Alex',
-    'Stinky',
+    'Stinky1',
     'The Rock',
     'Steve Austin',
     'Triple H',
     'Randy Orton',
+    'The Rock',
     'John Cena',
     'Batista',
     'Roman Reigns',
+    'Batista',
     'Dean Ambrose',
     'Seth Rollins',
     'Hulk Hogan',
@@ -62,6 +69,32 @@ const DBCache: ICache = {
         this[name].count = this[name].count + 1;
 
         return this[name];
+    },
+};
+
+async function getReq (req: string): Promise<Object> {
+    const check: Object | null = (await collections?.users?.findOne({ name: req }) || null);
+
+    if (check) {
+        console.log(`[Mongo] ${check}`);
+
+        await redisClient.set(req, JSON.stringify(check));
+
+        return check;
+    }
+
+    return {};
+}
+
+async function isCached (req: string, next: Function): Promise<Object> {
+    const data = await redisClient.get(req);
+
+    if (!data) {
+        return next(req);
+    } else {
+        console.log(`[Redis] ${data}`);
+
+        return data;
     }
 };
 
@@ -69,6 +102,7 @@ const DBCache: ICache = {
     const client: mongoDB.MongoClient = new mongoDB.MongoClient(DB_CONN);
 
     await client.connect();
+    await redisClient.connect();
 
     const db: mongoDB.Db = client.db(DB_NAME);
 
@@ -76,9 +110,7 @@ const DBCache: ICache = {
 
     collections.users = collection;
 
-    for (let i: number = 0; i < 12; i++) {
-        await DBCache.get(req[i]);
+    for (let i: number = 0; i < 14; i++) {
+        await isCached(req[i], getReq);
     }
-
-    setTimeout(() => console.log(DBCache), 10000);
 })();
