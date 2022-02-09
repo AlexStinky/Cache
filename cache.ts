@@ -9,7 +9,7 @@ const CACHESIZE = process.env.CACHESIZE || 10; // Размер кэша
 
 const req: string[] = [
     'Alex',
-    'Stinky1',
+    'Stinky',
     'The Rock',
     'Steve Austin',
     'Triple H',
@@ -26,48 +26,39 @@ const req: string[] = [
 
 const collections: { users?: mongoDB.Collection } = {};
 
-interface IRes {
-    data: Object;
-    count: number;
-    date: Date;
-}
+class DBCache {
+    max: number;
+    cache = new Map<string, Object>();
+    
+    constructor(max: number = 5) {
+        this.max = max;
+    }
 
-interface ICache extends Record<string, any> {
-    get: (name: string) => Promise<Object>;
-}
+    async get (key: string): Promise<any> {
+        if (this.cache.size === this.max) this.cache.delete(this.first());
 
-const DBCache: ICache = {
-    get: async function (name: string): Promise<Object> {
-        if (!this[name]) {
-            const check: Object | null = (await collections?.users?.findOne({ name: name }) || null);
+        let item: any = this.cache.get(key);
 
-            if (!check) {
+        if (item) {
+            this.cache.delete(key);
+            this.cache.set(key, item);
+        } else {
+            item = (await collections?.users?.findOne({ name: key }) || null);
+
+            if (!item) {
                 return {};
             }
 
-            const res: IRes = {
-                data: check,
-                count: 0,
-                date: new Date(),
-            };
-
-            this[name] = res;
+            this.cache.set(key, item);
         }
 
-        const temp = this[name];
-        delete this[name];
+        return item;
+    }
 
-        this[name] = temp;
-
-        const keys = Object.keys(this);
-
-        if (keys.length >= CACHESIZE) {
-            delete this[keys[1]];
-        }
-
-        return this[name];
-    },
-};
+    first() {
+        return this.cache.keys().next().value;
+    }
+}
 
 (async function () {
     const client: mongoDB.MongoClient = new mongoDB.MongoClient(DB_CONN);
@@ -80,9 +71,11 @@ const DBCache: ICache = {
 
     collections.users = collection;
 
+    const dbcache = new DBCache();
+
     for (let i: number = 0; i < 14; i++) {
-        await DBCache.get(req[i]);
+        await dbcache.get(req[i]);
     }
 
-    setTimeout(() => { console.log(DBCache) }, 10000);
+    setTimeout(() => { console.log(dbcache) }, 10000);
 })();
